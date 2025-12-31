@@ -77,4 +77,15 @@ export const getSessionPlayers = async (sessionId) => {
   return response.data
 }
 
+// Timeline Actions (NEW)
+export const placeCard = async (placementData) => {
+  const response = await api.post('/game/place-card', placementData)
+  return response.data
+}
+
+export const getPlayerTimeline = async (sessionId, playerId) => {
+  const response = await api.get(`/game/timeline/${sessionId}/${playerId}`)
+  return response.data
+}
+
 export default api
