@@ -1,5 +1,7 @@
 # 🎵 Hister 2.0 - Music Quiz Game
 
+> **CodeRabbit Test** - Testing AI Code Reviews 🐰
+
 Ein interaktives Musik-Ratespiel mit Spotify-Integration für lokales Multiplayer.
 
 ## 🎯 Features
