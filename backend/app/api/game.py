@@ -6,7 +6,16 @@ from pydantic import BaseModel
 from typing import List, Dict, Optional
 from ..services.game_service import game_service
 from ..services.websocket_service import broadcast_to_session
-from ..models.game import GameSession, Player, GuessRequest, GuessResult
+from ..models.game import (
+    GameSession, 
+    Player, 
+    GuessRequest, 
+    GuessResult,
+    PlacementRequest,
+    PlacementResult,
+    TimelineCard,
+    GameMode
+)
 
 router = APIRouter(prefix="/game", tags=["Game"])
 
@@ -14,6 +23,7 @@ router = APIRouter(prefix="/game", tags=["Game"])
 class CreateSessionRequest(BaseModel):
     host_name: str
     playlist_id: Optional[str] = None
+    game_mode: Optional[GameMode] = GameMode.ORIGINAL
 
 
 class AddPlayerRequest(BaseModel):
@@ -38,7 +48,8 @@ async def create_session(request: CreateSessionRequest):
     try:
         session = game_service.create_session(
             host_name=request.host_name,
-            playlist_id=request.playlist_id
+            playlist_id=request.playlist_id,
+            game_mode=request.game_mode or GameMode.ORIGINAL
         )
         
         # Hole den Host-Spieler
@@ -163,5 +174,53 @@ async def get_leaderboard(session_id: str) -> List[Dict]:
     try:
         leaderboard = game_service.get_leaderboard(session_id)
         return leaderboard
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================================================
+# TIMELINE-ENDPOINTS (HITSTER Original)
+# =====================================================
+
+@router.post("/place-card", response_model=PlacementResult)
+async def place_card(placement: PlacementRequest):
+    """
+    Platziere Karte in Timeline (Hauptmechanik)
+    """
+    try:
+        result = game_service.place_card_in_timeline(placement)
+        
+        # WebSocket: Benachrichtige alle über Platzierung
+        await broadcast_to_session(placement.session_id, 'card_placed', {
+            'player_id': placement.player_id,
+            'correct': result.correct,
+            'new_score': result.new_score,
+            'won_game': result.won_game,
+            'earned_token': result.earned_token
+        })
+        
+        if result.won_game:
+            await broadcast_to_session(placement.session_id, 'game_won', {
+                'player_id': placement.player_id,
+                'final_score': result.new_score
+            })
+        
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/timeline/{session_id}/{player_id}")
+async def get_timeline(session_id: str, player_id: str) -> List[TimelineCard]:
+    """
+    Hole Timeline eines Spielers
+    """
+    try:
+        timeline = game_service.get_player_timeline(session_id, player_id)
+        return timeline
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

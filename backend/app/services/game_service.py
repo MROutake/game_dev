@@ -9,7 +9,11 @@ from ..models.game import (
     Player,
     SpotifyTrack,
     GuessRequest,
-    GuessResult
+    GuessResult,
+    TimelineCard,
+    PlacementRequest,
+    PlacementResult,
+    GameMode
 )
 from .spotify_service import spotify_service
 
@@ -27,18 +31,29 @@ class GameService:
         self.track_queues: Dict[str, List[SpotifyTrack]] = {}  # session_id -> [tracks]
         self.solutions: Dict[str, SpotifyTrack] = {}  # session_id -> current_track
     
-    def create_session(self, host_name: str, playlist_id: Optional[str] = None) -> GameSession:
+    def create_session(self, host_name: str, playlist_id: Optional[str] = None, game_mode: GameMode = GameMode.ORIGINAL) -> GameSession:
         """
         Erstelle neue Game Session
         """
         session_id = str(uuid.uuid4())
+        
+        # Token-Anzahl je nach Modus
+        token_count = {
+            GameMode.ORIGINAL: 2,
+            GameMode.PRO: 5,
+            GameMode.EXPERT: 3,
+            GameMode.TEAMWORK: 10
+        }.get(game_mode, 2)
         
         session = GameSession(
             session_id=session_id,
             host_name=host_name,
             playlist_id=playlist_id,
             current_track_index=0,
-            status="waiting"
+            status="waiting",
+            game_mode=game_mode,
+            win_condition=10,
+            round_number=0
         )
         
         self.sessions[session_id] = session
@@ -49,7 +64,10 @@ class GameService:
             player_id=str(uuid.uuid4()),
             name=host_name,
             score=0,
-            session_id=session_id
+            session_id=session_id,
+            tokens=token_count,
+            timeline=[],
+            has_won=False
         )
         self.players[session_id].append(host_player)
         
@@ -62,12 +80,25 @@ class GameService:
         if session_id not in self.sessions:
             raise ValueError(f"Session {session_id} nicht gefunden")
         
+        session = self.sessions[session_id]
+        
+        # Token-Anzahl je nach Modus
+        token_count = {
+            GameMode.ORIGINAL: 2,
+            GameMode.PRO: 5,
+            GameMode.EXPERT: 3,
+            GameMode.TEAMWORK: 10
+        }.get(session.game_mode, 2)
+        
         player_id = str(uuid.uuid4())
         player = Player(
             player_id=player_id,
             name=player_name,
             score=0,
-            session_id=session_id
+            session_id=session_id,
+            tokens=token_count,
+            timeline=[],
+            has_won=False
         )
         
         self.players[session_id].append(player)
@@ -147,16 +178,33 @@ class GameService:
         session = self.sessions[session_id]
         session.status = "playing"
         session.started_at = datetime.now()
-        session.current_track_index = 0
+        session.round_number = 1
         
-        # Ersten Track laden
-        current_track = self.track_queues[session_id][0]
-        self.solutions[session_id] = current_track
+        # Gebe jedem Spieler eine Start-Karte
+        players = self.players.get(session_id, [])
+        num_start_cards = len(players)
+        
+        self.give_start_card(session_id)
+        
+        # Setze current_track_index NACH den Start-Karten
+        session.current_track_index = num_start_cards
+        
+        # Ersten Spieler setzen
+        if len(players) > 0:
+            session.current_player_turn = players[0].player_id
+        
+        # Ersten Track für Gameplay laden (nicht die Start-Karten)
+        if session.current_track_index < len(self.track_queues[session_id]):
+            current_track = self.track_queues[session_id][session.current_track_index]
+            self.solutions[session_id] = current_track
         
         return {
             "session_id": session_id,
             "status": "playing",
             "total_tracks": len(self.track_queues[session_id]),
+            "current_track_index": session.current_track_index,
+            "current_player": session.current_player_turn,
+            "game_mode": session.game_mode.value,
             "current_track": {
                 "track_id": current_track.track_id,
                 "uri": current_track.uri,
@@ -326,6 +374,170 @@ class GameService:
         
         # Später: Levenshtein für Tippfehler
         return False
+    
+    # =====================================================
+    # TIMELINE-SYSTEM (HITSTER Original)
+    # =====================================================
+    
+    def place_card_in_timeline(self, placement: PlacementRequest) -> PlacementResult:
+        """
+        Platziere aktuelle Karte in Spieler-Timeline
+        Prüfe ob Position korrekt ist (HITSTER Kernmechanik)
+        """
+        session_id = placement.session_id
+        player_id = placement.player_id
+        position = placement.position
+        
+        if session_id not in self.solutions:
+            raise ValueError("Kein aktiver Track für diese Session")
+        
+        player = self._find_player(session_id, player_id)
+        if not player:
+            raise ValueError(f"Spieler {player_id} nicht gefunden")
+        
+        session = self.sessions[session_id]
+        current_track = self.solutions[session_id]
+        track_year = int(current_track.release_date[:4])
+        
+        # Prüfe ob Position in Timeline korrekt ist
+        is_correct = self._check_timeline_position(
+            player.timeline,
+            position,
+            track_year
+        )
+        
+        # Token-Check (PRO/EXPERT Modus)
+        earned_token = False
+        if is_correct and session.game_mode in [GameMode.PRO, GameMode.EXPERT]:
+            # PRO: Titel + Künstler müssen stimmen
+            if placement.title_guess and placement.artist_guess:
+                title_correct = self._fuzzy_match(placement.title_guess, current_track.title)
+                artist_correct = self._fuzzy_match(placement.artist_guess, current_track.artist)
+                
+                if session.game_mode == GameMode.EXPERT:
+                    # EXPERT: Auch Jahr muss stimmen
+                    year_correct = placement.year_guess == track_year
+                    if title_correct and artist_correct and year_correct:
+                        earned_token = True
+                        player.tokens += 1
+                elif title_correct and artist_correct:
+                    earned_token = True
+                    player.tokens += 1
+        
+        if is_correct:
+            # Füge Karte zur Timeline hinzu
+            new_card = TimelineCard(
+                position=position,
+                track_id=current_track.track_id,
+                title=current_track.title,
+                artist=current_track.artist,
+                year=track_year,
+                is_correct=True
+            )
+            
+            player.timeline.insert(position, new_card)
+            
+            # Aktualisiere Positionen aller nachfolgenden Karten
+            for i in range(position + 1, len(player.timeline)):
+                player.timeline[i].position = i
+            
+            player.score += 1  # Score = Anzahl Karten in Timeline
+            
+            # Prüfe Gewinnbedingung
+            if player.score >= session.win_condition:
+                player.has_won = True
+                session.status = "finished"
+                return PlacementResult(
+                    correct=True,
+                    won_game=True,
+                    new_score=player.score,
+                    earned_token=earned_token,
+                    correct_year=track_year,
+                    correct_title=current_track.title,
+                    correct_artist=current_track.artist,
+                    player_timeline=player.timeline
+                )
+        
+        return PlacementResult(
+            correct=is_correct,
+            won_game=False,
+            new_score=player.score,
+            earned_token=earned_token,
+            correct_year=track_year,
+            correct_title=current_track.title,
+            correct_artist=current_track.artist,
+            player_timeline=player.timeline if is_correct else []
+        )
+    
+    def _check_timeline_position(
+        self, 
+        timeline: List[TimelineCard], 
+        position: int, 
+        year: int
+    ) -> bool:
+        """
+        Prüfe ob das Jahr an die richtige Position in der Timeline passt
+        
+        Timeline ist aufsteigend sortiert (älteste links, neueste rechts)
+        """
+        # Leere Timeline: Immer korrekt
+        if len(timeline) == 0:
+            return position == 0
+        
+        # Position 0: Song muss älter oder gleich alt wie timeline[0] sein
+        if position == 0:
+            return year <= timeline[0].year
+        
+        # Position am Ende: Song muss neuer oder gleich alt wie letzter sein
+        if position == len(timeline):
+            return year >= timeline[-1].year
+        
+        # Mittendrin: Jahr muss zwischen links und rechts liegen
+        if 0 < position < len(timeline):
+            left_year = timeline[position - 1].year
+            right_year = timeline[position].year
+            return left_year <= year <= right_year
+        
+        return False
+    
+    def get_player_timeline(self, session_id: str, player_id: str) -> List[TimelineCard]:
+        """
+        Hole Timeline eines Spielers
+        """
+        player = self._find_player(session_id, player_id)
+        if not player:
+            raise ValueError(f"Spieler {player_id} nicht gefunden")
+        return player.timeline
+    
+    def give_start_card(self, session_id: str) -> None:
+        """
+        Gebe jedem Spieler eine Start-Karte (automatisch korrekt platziert)
+        Wird beim Spielstart aufgerufen
+        """
+        if session_id not in self.track_queues:
+            raise ValueError("Keine Tracks geladen")
+        
+        players = self.players.get(session_id, [])
+        tracks = self.track_queues[session_id]
+        
+        for idx, player in enumerate(players):
+            if idx < len(tracks):
+                track = tracks[idx]
+                year = int(track.release_date[:4])
+                
+                start_card = TimelineCard(
+                    position=0,
+                    track_id=track.track_id,
+                    title=track.title,
+                    artist=track.artist,
+                    year=year,
+                    is_correct=True
+                )
+                
+                player.timeline = [start_card]
+                player.score = 1
+                
+                print(f"📍 Spieler {player.name} erhält Start-Karte: {track.title} ({year})")
 
 
 # Singleton Instance
