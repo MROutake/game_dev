@@ -1,0 +1,76 @@
+# CodeRabbit Configuration für Hister 2.0
+# Dokumentation: https://docs.coderabbit.ai/guides/configure-coderabbit
+
+# Sprache für Reviews (Deutsch)
+language: de
+
+# Review-Einstellungen
+reviews:
+  # Automatische Reviews für alle PRs
+  auto_review:
+    enabled: true
+    
+  # Auch Drafts reviewen
+  drafts: true
+  
+  # Review-Level
+  level: detailed
+  
+  # Welche Dateien sollen reviewt werden
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/__pycache__/**"
+    - "!**/venv/**"
+    - "!**/dist/**"
+    - "!**/build/**"
+    - "**.py"
+    - "**.js"
+    - "**.jsx"
+    - "**.ts"
+    - "**.tsx"
+  
+  # Tone des Reviews
+  tone_instructions: |
+    - Sei konstruktiv und freundlich
+    - Erkläre nicht nur WAS falsch ist, sondern auch WARUM
+    - Gib konkrete Code-Beispiele für Verbesserungen
+    - Fokussiere auf wichtige Probleme (Security, Performance, Bugs)
+    - Ermutige zu Best Practices
+
+# Chat-Einstellungen
+chat:
+  auto_reply: true
+
+# Welche Checks sollen durchgeführt werden
+checks:
+  # Python-spezifisch
+  - name: "Python Best Practices"
+    enabled: true
+  - name: "Security Issues"
+    enabled: true
+  - name: "Performance Issues"
+    enabled: true
+  
+  # JavaScript/React-spezifisch
+  - name: "React Best Practices"
+    enabled: true
+  - name: "Async/Await Issues"
+    enabled: true
+
+# Ignoriere automatisch generierte Dateien
+ignore:
+  - "**/*.pyc"
+  - "**/__pycache__/**"
+  - "**/node_modules/**"
+  - "**/venv/**"
+  - "**/.git/**"
+  - "**/dist/**"
+  - "**/build/**"
+
+# Kontext für bessere Reviews
+knowledge_base:
+  - "Dies ist ein Musik-Quiz-Spiel (HITSTER-Klon)"
+  - "Backend: Python FastAPI + Spotify API"
+  - "Frontend: React + Vite + Tailwind CSS"
+  - "Real-time: Socket.IO WebSockets"
+  - "Kernmechanik: Timeline-basiertes Kartenspiel"
