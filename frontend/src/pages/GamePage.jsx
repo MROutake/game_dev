@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useLocation, useNavigate } from 'react-router-dom'
 import { Music, Trophy, Coins, ArrowLeft } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
@@ -37,28 +37,23 @@ function GamePage() {
     },
     onGameWon: (data) => {
       console.log('🏆 Spieler hat gewonnen:', data)
-      alert(`${data.player_name || 'Ein Spieler'} hat gewonnen! 🎉`)
+      // TODO: Replace with toast notification
+      console.warn('🎉 Gewinner:', data.player_name || 'Ein Spieler')
     }
   })
 
-  // Lade Timeline beim Start
-  useEffect(() => {
-    if (sessionId && playerId) {
-      loadMyTimeline()
-      loadPlayers()
-    }
-  }, [sessionId, playerId])
-
-  const loadMyTimeline = async () => {
+  // Lade Timeline - wrapped mit useCallback für stabile Dependency
+  const loadMyTimeline = useCallback(async () => {
     try {
       const timeline = await getPlayerTimeline(sessionId, playerId)
       setMyTimeline(timeline)
     } catch (err) {
       console.error('❌ Fehler beim Laden der Timeline:', err)
     }
-  }
+  }, [sessionId, playerId])
 
-  const loadPlayers = async () => {
+  // Lade Spieler - wrapped mit useCallback für stabile Dependency
+  const loadPlayers = useCallback(async () => {
     try {
       const response = await getSessionPlayers(sessionId)
       setPlayers(response.players || [])
@@ -71,7 +66,15 @@ function GamePage() {
     } catch (err) {
       console.error('❌ Fehler beim Laden der Spieler:', err)
     }
-  }
+  }, [sessionId, playerId])
+
+  // Lade Timeline beim Start
+  useEffect(() => {
+    if (sessionId && playerId) {
+      loadMyTimeline()
+      loadPlayers()
+    }
+  }, [sessionId, playerId, loadMyTimeline, loadPlayers])
 
   const handlePlaceCard = async (position) => {
     setSelectedPosition(position)
@@ -85,7 +88,8 @@ function GamePage() {
 
   const handleGuessSubmit = async (guess) => {
     if (selectedPosition === null) {
-      alert('Bitte wähle zuerst eine Position in der Timeline!')
+      // TODO: Replace with toast notification
+      console.warn('⚠️ Bitte wähle zuerst eine Position in der Timeline!')
       return
     }
     
@@ -105,13 +109,12 @@ function GamePage() {
       console.log('✅ Placement Result:', result)
       setPlacementResult(result)
       
-      // Zeige Ergebnis
+      // Zeige Ergebnis (TODO: Replace with toast notifications)
       if (result.correct) {
-        alert(`🎉 Richtig! ${result.correct_title} (${result.correct_year}) 
-${result.earned_token ? '🎟️ +1 Token verdient!' : ''}`)
+        console.log(`🎉 Richtig! ${result.correct_title} (${result.correct_year})${result.earned_token ? ' 🎟️ +1 Token' : ''}`)
         loadMyTimeline()
       } else {
-        alert(`❌ Falsch! Es war: ${result.correct_title} von ${result.correct_artist} (${result.correct_year})`)
+        console.log(`❌ Falsch! Es war: ${result.correct_title} von ${result.correct_artist} (${result.correct_year})`)
       }
       
       // Nächster Track
@@ -124,7 +127,7 @@ ${result.earned_token ? '🎟️ +1 Token verdient!' : ''}`)
       
     } catch (err) {
       console.error('❌ Fehler beim Platzieren:', err)
-      alert('Fehler beim Platzieren der Karte')
+      // TODO: Replace with toast notification
     } finally {
       setLoading(false)
     }
@@ -205,7 +208,7 @@ ${result.earned_token ? '🎟️ +1 Token verdient!' : ''}`)
           <Timeline 
             cards={myTimeline}
             onPlaceCard={handlePlaceCard}
-            isMyTurn={true}
+            isMyTurn={isMyTurn}
             canPlaceCard={!loading}
           />
         </div>
