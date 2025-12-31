@@ -117,3 +117,37 @@ class PlaylistInfo(BaseModel):
     owner: str
     total_tracks: int
     tracks: List[SpotifyTrack] = []
+
+
+# =====================================================
+# TOKEN-SYSTEM (HITSTER Actions)
+# =====================================================
+
+class TokenActionType(str, Enum):
+    """Token-Aktionstypen"""
+    SKIP_SONG = "skip_song"      # 1 Token: Song überspringen
+    STEAL_CARD = "steal_card"    # 1 Token: Karte stehlen (+ Guess)
+    BUY_CARD = "buy_card"        # 3 Token: Karte kaufen (automatisch korrekt)
+
+
+class TokenActionRequest(BaseModel):
+    """Request für Token-Aktion"""
+    action_type: TokenActionType
+    session_id: str
+    player_id: str
+    
+    # Für STEAL_CARD:
+    target_player_id: Optional[str] = None
+    target_position: Optional[int] = None  # Welche Karte stehlen?
+    title_guess: Optional[str] = None
+    artist_guess: Optional[str] = None
+    year_guess: Optional[int] = None  # Nur bei EXPERT
+
+
+class TokenActionResult(BaseModel):
+    """Ergebnis einer Token-Aktion"""
+    success: bool
+    tokens_spent: int
+    new_token_count: int
+    message: str
+    stolen_card: Optional[TimelineCard] = None  # Bei erfolgreichem Diebstahl

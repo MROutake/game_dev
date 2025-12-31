@@ -13,7 +13,10 @@ from ..models.game import (
     TimelineCard,
     PlacementRequest,
     PlacementResult,
-    GameMode
+    GameMode,
+    TokenActionType,
+    TokenActionRequest,
+    TokenActionResult
 )
 from .spotify_service import spotify_service
 
@@ -538,7 +541,241 @@ class GameService:
                 player.score = 1
                 
                 print(f"📍 Spieler {player.name} erhält Start-Karte: {track.title} ({year})")
+    
+    # =====================================================
+    # TOKEN-SYSTEM (HITSTER Actions)
+    # =====================================================
+    
+    def use_token_action(self, action: TokenActionRequest) -> TokenActionResult:
+        """
+        Führe Token-Aktion aus
+        """
+        player = self._find_player(action.session_id, action.player_id)
+        if not player:
+            raise ValueError(f"Spieler {action.player_id} nicht gefunden")
+        
+        if action.action_type == TokenActionType.SKIP_SONG:
+            return self._token_skip_song(action.session_id, player)
+        
+        elif action.action_type == TokenActionType.STEAL_CARD:
+            return self._token_steal_card(action, player)
+        
+        elif action.action_type == TokenActionType.BUY_CARD:
+            return self._token_buy_card(action.session_id, player)
+        
+        else:
+            raise ValueError(f"Unbekannter Action Type: {action.action_type}")
+    
+    def _token_skip_song(self, session_id: str, player: Player) -> TokenActionResult:
+        """
+        Token-Aktion 1: Song überspringen (1 Token)
+        """
+        if player.tokens < 1:
+            return TokenActionResult(
+                success=False,
+                tokens_spent=0,
+                new_token_count=player.tokens,
+                message="Nicht genug Token! Benötigt: 1 Token"
+            )
+        
+        # Token abziehen
+        player.tokens -= 1
+        
+        # Nächsten Song laden
+        try:
+            next_result = self.next_track(session_id)
+            
+            return TokenActionResult(
+                success=True,
+                tokens_spent=1,
+                new_token_count=player.tokens,
+                message=f"Song übersprungen! Nächster Song geladen."
+            )
+        except Exception as e:
+            # Token zurückgeben bei Fehler
+            player.tokens += 1
+            return TokenActionResult(
+                success=False,
+                tokens_spent=0,
+                new_token_count=player.tokens,
+                message=f"Fehler beim Überspringen: {str(e)}"
+            )
+    
+    def _token_steal_card(self, action: TokenActionRequest, thief: Player) -> TokenActionResult:
+        """
+        Token-Aktion 2: Karte stehlen (1 Token + Guess)
+        """
+        if thief.tokens < 1:
+            return TokenActionResult(
+                success=False,
+                tokens_spent=0,
+                new_token_count=thief.tokens,
+                message="Nicht genug Token! Benötigt: 1 Token"
+            )
+        
+        # Validiere Input
+        if not action.target_player_id or action.target_position is None:
+            return TokenActionResult(
+                success=False,
+                tokens_spent=0,
+                new_token_count=thief.tokens,
+                message="Ziel-Spieler und Position müssen angegeben werden!"
+            )
+        
+        if not action.title_guess or not action.artist_guess:
+            return TokenActionResult(
+                success=False,
+                tokens_spent=0,
+                new_token_count=thief.tokens,
+                message="Titel und Künstler müssen geraten werden!"
+            )
+        
+        # Finde Ziel-Spieler
+        target = self._find_player(action.session_id, action.target_player_id)
+        if not target:
+            return TokenActionResult(
+                success=False,
+                tokens_spent=0,
+                new_token_count=thief.tokens,
+                message="Ziel-Spieler nicht gefunden!"
+            )
+        
+        # Prüfe ob Ziel-Karte existiert
+        if action.target_position >= len(target.timeline):
+            return TokenActionResult(
+                success=False,
+                tokens_spent=0,
+                new_token_count=thief.tokens,
+                message="Karte an dieser Position existiert nicht!"
+            )
+        
+        # Hole Ziel-Karte
+        stolen_card = target.timeline[action.target_position]
+        
+        # Prüfe Guess
+        title_correct = self._fuzzy_match(action.title_guess, stolen_card.title)
+        artist_correct = self._fuzzy_match(action.artist_guess, stolen_card.artist)
+        
+        session = self.sessions.get(action.session_id)
+        year_correct = True  # Default für nicht-EXPERT Modus
+        
+        if session and session.game_mode == GameMode.EXPERT:
+            if action.year_guess:
+                year_correct = action.year_guess == stolen_card.year
+            else:
+                year_correct = False
+        
+        # Prüfe ob Diebstahl erfolgreich
+        success = title_correct and artist_correct and year_correct
+        
+        # Token IMMER abziehen (auch bei Fehlversuch)
+        thief.tokens -= 1
+        
+        if success:
+            # Entferne Karte von Ziel-Spieler
+            target.timeline.pop(action.target_position)
+            target.score -= 1
+            
+            # Füge Karte zu Dieb hinzu (am Ende)
+            thief.timeline.append(stolen_card)
+            thief.score += 1
+            
+            # Positionen aktualisieren
+            for i, card in enumerate(target.timeline):
+                card.position = i
+            for i, card in enumerate(thief.timeline):
+                card.position = i
+            
+            return TokenActionResult(
+                success=True,
+                tokens_spent=1,
+                new_token_count=thief.tokens,
+                message=f"🎉 Diebstahl erfolgreich! '{stolen_card.title}' gestohlen!",
+                stolen_card=stolen_card
+            )
+        else:
+            return TokenActionResult(
+                success=False,
+                tokens_spent=1,
+                new_token_count=thief.tokens,
+                message=f"❌ Diebstahl fehlgeschlagen! Falscher Guess. (Token verloren)"
+            )
+    
+    def _token_buy_card(self, session_id: str, player: Player) -> TokenActionResult:
+        """
+        Token-Aktion 3: Karte kaufen (3 Token = 1 gratis Karte)
+        """
+        if player.tokens < 3:
+            return TokenActionResult(
+                success=False,
+                tokens_spent=0,
+                new_token_count=player.tokens,
+                message="Nicht genug Token! Benötigt: 3 Token"
+            )
+        
+        if session_id not in self.track_queues:
+            return TokenActionResult(
+                success=False,
+                tokens_spent=0,
+                new_token_count=player.tokens,
+                message="Keine Tracks verfügbar!"
+            )
+        
+        session = self.sessions[session_id]
+        tracks = self.track_queues[session_id]
+        
+        # Nehme nächsten Track
+        if session.current_track_index >= len(tracks):
+            return TokenActionResult(
+                success=False,
+                tokens_spent=0,
+                new_token_count=player.tokens,
+                message="Keine weiteren Songs verfügbar!"
+            )
+        
+        current_track = tracks[session.current_track_index]
+        year = int(current_track.release_date[:4])
+        
+        # Token abziehen
+        player.tokens -= 3
+        
+        # Erstelle Karte
+        bought_card = TimelineCard(
+            position=len(player.timeline),
+            track_id=current_track.track_id,
+            title=current_track.title,
+            artist=current_track.artist,
+            year=year,
+            is_correct=True
+        )
+        
+        # Füge automatisch korrekt hinzu (sortiert nach Jahr)
+        # Finde richtige Position
+        insert_position = 0
+        for i, card in enumerate(player.timeline):
+            if year >= card.year:
+                insert_position = i + 1
+        
+        player.timeline.insert(insert_position, bought_card)
+        player.score += 1
+        
+        # Positionen aktualisieren
+        for i, card in enumerate(player.timeline):
+            card.position = i
+        
+        # Nächsten Track für andere
+        session.current_track_index += 1
+        
+        return TokenActionResult(
+            success=True,
+            tokens_spent=3,
+            new_token_count=player.tokens,
+            message=f"✅ Karte gekauft: '{current_track.title}' ({year})",
+            stolen_card=bought_card
+        )
 
 
+# Singleton Instance
+game_service = GameService()
 # Singleton Instance
 game_service = GameService()

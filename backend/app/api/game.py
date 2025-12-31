@@ -14,7 +14,9 @@ from ..models.game import (
     PlacementRequest,
     PlacementResult,
     TimelineCard,
-    GameMode
+    GameMode,
+    TokenActionRequest,
+    TokenActionResult
 )
 
 router = APIRouter(prefix="/game", tags=["Game"])
@@ -220,6 +222,34 @@ async def get_timeline(session_id: str, player_id: str) -> List[TimelineCard]:
     try:
         timeline = game_service.get_player_timeline(session_id, player_id)
         return timeline
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================================================
+# TOKEN-SYSTEM ENDPOINTS
+# =====================================================
+
+@router.post("/token-action", response_model=TokenActionResult)
+async def use_token_action(action: TokenActionRequest):
+    """
+    Führe Token-Aktion aus (Skip Song, Steal Card, Buy Card)
+    """
+    try:
+        result = game_service.use_token_action(action)
+        
+        # WebSocket: Benachrichtige alle über Token-Aktion
+        await broadcast_to_session(action.session_id, 'token_action_used', {
+            'player_id': action.player_id,
+            'action_type': action.action_type.value,
+            'success': result.success,
+            'message': result.message,
+            'new_token_count': result.new_token_count
+        })
+        
+        return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
