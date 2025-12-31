@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useLocation, useNavigate } from 'react-router-dom'
 import { Music, Trophy, Coins, ArrowLeft } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { placeCard, getPlayerTimeline, getSessionPlayers, nextTrack } from '../services/api'
+import { placeCard, getPlayerTimeline, getSessionPlayers, nextTrack, useTokenAction } from '../services/api'
 import Timeline from '../components/Timeline'
 import GuessInputs from '../components/GuessInputs'
+import TokenActions from '../components/TokenActions'
 
 function GamePage() {
   const { sessionId } = useParams()
@@ -39,6 +40,14 @@ function GamePage() {
       console.log('🏆 Spieler hat gewonnen:', data)
       // TODO: Replace with toast notification
       console.warn('🎉 Gewinner:', data.player_name || 'Ein Spieler')
+    },
+    onTokenActionUsed: (data) => {
+      console.log('🎟️ Token-Aktion verwendet:', data)
+      loadPlayers() // Token-Count aktualisieren
+      if (data.action_type === 'skip_song') {
+        // Song wurde übersprungen, lade neuen Track
+        console.log('⏭️ Song übersprungen')
+      }
     }
   })
 
@@ -133,6 +142,82 @@ function GamePage() {
     }
   }
 
+  // =====================================================
+  // TOKEN-AKTIONEN
+  // =====================================================
+
+  const handleSkipSong = async () => {
+    setLoading(true)
+    try {
+      const result = await useTokenAction({
+        action_type: 'skip_song',
+        session_id: sessionId,
+        player_id: playerId
+      })
+
+      console.log('✅ Skip Result:', result)
+      if (result.success) {
+        console.log('⏭️ Song übersprungen!')
+        loadPlayers() // Token-Count aktualisieren
+      } else {
+        console.warn('❌', result.message)
+      }
+    } catch (err) {
+      console.error('❌ Fehler beim Überspringen:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleStealCard = async (stealData) => {
+    setLoading(true)
+    try {
+      const result = await useTokenAction({
+        action_type: 'steal_card',
+        session_id: sessionId,
+        player_id: playerId,
+        ...stealData
+      })
+
+      console.log('✅ Steal Result:', result)
+      if (result.success) {
+        console.log('🎉 Diebstahl erfolgreich!', result.message)
+        loadMyTimeline()
+        loadPlayers()
+      } else {
+        console.warn('❌', result.message)
+      }
+    } catch (err) {
+      console.error('❌ Fehler beim Diebstahl:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleBuyCard = async () => {
+    setLoading(true)
+    try {
+      const result = await useTokenAction({
+        action_type: 'buy_card',
+        session_id: sessionId,
+        player_id: playerId
+      })
+
+      console.log('✅ Buy Result:', result)
+      if (result.success) {
+        console.log('💳 Karte gekauft!', result.message)
+        loadMyTimeline()
+        loadPlayers()
+      } else {
+        console.warn('❌', result.message)
+      }
+    } catch (err) {
+      console.error('❌ Fehler beim Kauf:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="min-h-screen p-4">
       {/* Header */}
@@ -210,6 +295,18 @@ function GamePage() {
             onPlaceCard={handlePlaceCard}
             isMyTurn={isMyTurn}
             canPlaceCard={!loading}
+          />
+        </div>
+
+        {/* Token-Aktionen */}
+        <div className="mb-6">
+          <TokenActions
+            tokens={myTokens}
+            onSkipSong={handleSkipSong}
+            onStealCard={handleStealCard}
+            onBuyCard={handleBuyCard}
+            disabled={loading}
+            otherPlayers={players.filter(p => p.player_id !== playerId)}
           />
         </div>
 
