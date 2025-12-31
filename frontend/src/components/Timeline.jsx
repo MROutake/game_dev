@@ -63,7 +63,7 @@ function PlacementSlot({ position, onClick, disabled = false, isFirst = false })
           ? 'border-gray-700 text-gray-700 cursor-not-allowed' 
           : 'border-hister-pink text-hister-pink hover:bg-hister-pink hover:bg-opacity-10 hover:scale-110 cursor-pointer'
         }
-        ${isFirst ? 'border-blue-500 text-blue-500' : ''}
+        ${isFirst && !disabled ? 'border-blue-500 text-blue-500' : ''}
       `}
       title={disabled ? 'Nicht dein Zug' : `Karte hier platzieren (Position ${position})`}
     >

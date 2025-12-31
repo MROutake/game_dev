@@ -87,7 +87,7 @@ function GuessInputs({ gameMode = 'original', onSubmit, disabled = false }) {
               onChange={(e) => setYearGuess(e.target.value)}
               placeholder="z.B. 1975"
               min="1900"
-              max="2025"
+              max={new Date().getFullYear()}
               disabled={disabled}
               className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded-lg
                        text-white placeholder-gray-500
@@ -102,6 +102,15 @@ function GuessInputs({ gameMode = 'original', onSubmit, disabled = false }) {
           {gameMode === 'pro' && '💡 Titel + Künstler richtig = +1 Token'}
           {gameMode === 'expert' && '💡 Titel + Künstler + Jahr richtig = +1 Token'}
         </p>
+
+        {/* Submit Button */}
+        <button
+          type="submit"
+          disabled={disabled}
+          className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Rate abgeben
+        </button>
       </form>
     </div>
   )
