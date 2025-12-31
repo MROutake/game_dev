@@ -640,8 +640,8 @@ class GameService:
                 message="Ziel-Spieler nicht gefunden!"
             )
         
-        # Prüfe ob Ziel-Karte existiert
-        if action.target_position >= len(target.timeline):
+        # Prüfe ob Ziel-Karte existiert (auch negative Indizes verhindern)
+        if action.target_position < 0 or action.target_position >= len(target.timeline):
             return TokenActionResult(
                 success=False,
                 tokens_spent=0,
@@ -763,6 +763,18 @@ class GameService:
         for i, card in enumerate(player.timeline):
             card.position = i
         
+        # Prüfe Gewinnbedingung
+        if player.score >= session.win_condition:
+            player.has_won = True
+            session.status = "finished"
+            return TokenActionResult(
+                success=True,
+                tokens_spent=3,
+                new_token_count=player.tokens,
+                message=f"🏆 Karte gekauft: '{current_track.title}' ({year}) - DU HAST GEWONNEN!",
+                stolen_card=bought_card
+            )
+        
         # Nächsten Track für andere
         session.current_track_index += 1
         
@@ -774,8 +786,5 @@ class GameService:
             stolen_card=bought_card
         )
 
-
-# Singleton Instance
-game_service = GameService()
 # Singleton Instance
 game_service = GameService()
