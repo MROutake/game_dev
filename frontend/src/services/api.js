@@ -89,7 +89,7 @@ export const getPlayerTimeline = async (sessionId, playerId) => {
 }
 
 // Token Actions (NEW)
-export const useTokenAction = async (actionData) => {
+export const executeTokenAction = async (actionData) => {
   const response = await api.post('/game/token-action', actionData)
   return response.data
 }

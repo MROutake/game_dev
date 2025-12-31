@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useLocation, useNavigate } from 'react-router-dom'
 import { Music, Trophy, Coins, ArrowLeft } from 'lucide-react'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { placeCard, getPlayerTimeline, getSessionPlayers, nextTrack, useTokenAction } from '../services/api'
+import { placeCard, getPlayerTimeline, getSessionPlayers, nextTrack, executeTokenAction } from '../services/api'
 import Timeline from '../components/Timeline'
 import GuessInputs from '../components/GuessInputs'
 import TokenActions from '../components/TokenActions'
@@ -149,7 +149,7 @@ function GamePage() {
   const handleSkipSong = async () => {
     setLoading(true)
     try {
-      const result = await useTokenAction({
+      const result = await executeTokenAction({
         action_type: 'skip_song',
         session_id: sessionId,
         player_id: playerId
@@ -172,7 +172,7 @@ function GamePage() {
   const handleStealCard = async (stealData) => {
     setLoading(true)
     try {
-      const result = await useTokenAction({
+      const result = await executeTokenAction({
         action_type: 'steal_card',
         session_id: sessionId,
         player_id: playerId,
@@ -197,7 +197,7 @@ function GamePage() {
   const handleBuyCard = async () => {
     setLoading(true)
     try {
-      const result = await useTokenAction({
+      const result = await executeTokenAction({
         action_type: 'buy_card',
         session_id: sessionId,
         player_id: playerId
